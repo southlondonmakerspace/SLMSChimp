@@ -412,10 +412,10 @@ class MailChimpAPI:
         except Exception as error:
             logging.error(f"add_tag: {error}")
         if response.status_code == 204:
-            logging.debug(f"add_tag: Successfully added tag '{tag}' to "
+            logging.debug(f"rem_tag: Successfully removed tag '{tag}' to "
                           f"contact_id '{contact_id}'.")
         else:
-            logging.error(f"add_tag: Failed to add tag '{tag}' to contact_id"
+            logging.error(f"rem_tag: Failed to remove tag '{tag}' to contact_id"
                           f" '{contact_id}'. Response: {response.status_code}")
 
     def list_tags(self, contact_id):
