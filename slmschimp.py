@@ -410,7 +410,7 @@ class MailChimpAPI:
         try:
             response = requests.post(url, json=payload, auth=self.auth)
         except Exception as error:
-            logging.error(f"add_tag: {error}")
+            logging.error(f"rem_tag: {error}")
         if response.status_code == 204:
             logging.debug(f"rem_tag: Successfully removed tag '{tag}' to "
                           f"contact_id '{contact_id}'.")
@@ -1028,7 +1028,7 @@ class Discourse:
 
 
 class HouseKeeping:
-
+    # TODO : days_till_openeve and next_openeve are redundant, need to go.
     @staticmethod
     def days_till_openeve():
         """ returns int with number of days until the next open evening"""
@@ -1045,7 +1045,7 @@ class HouseKeeping:
         logging.debug(f"The next Open Evening should be happening: "
                       f"{event.strftime('%A, %d %B')}")
         return event
-
+    # TODO: Should be done with event date from discourse calendar.
     @staticmethod
     def do_we_have_an_event():
         event_info = Discourse.get_openeve_date_and_url()
@@ -1076,6 +1076,7 @@ def main():
         automation.status()
 
     if args.auto:
+        # TODO: Should be done with discourse event! 
         if datetime.now().date() == HouseKeeping.next_openeve():
             logging.warning("Today is Open Evening! No invitation unless "
                             "argument -f / --force is used.")
