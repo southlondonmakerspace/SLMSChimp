@@ -15,7 +15,7 @@ import requests
 import logging
 import argparse
 from tabulate import tabulate
-from datetime import datetime, timedelta
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()  # loads variables from .env file into environment.
@@ -1026,44 +1026,28 @@ class Discourse:
             """ remember to get the new topic-id with response.json().get('id') """
         return response
 
-
-class HouseKeeping:
-    # TODO : days_till_openeve and next_openeve are redundant, need to go.
-    @staticmethod
-    def days_till_openeve():
-        """ returns int with number of days until the next open evening"""
-        reference_date = datetime(2023, 7, 12).date()
-        today = datetime.now().date()
-        days_since_reference = (today - reference_date).days
-        days_till_openeve = (14 - (days_since_reference % 14)) % 14
-        return days_till_openeve
-
     @staticmethod
     def next_openeve():
-        """ returns datetime obj with the calculated day for the next OE """
-        event = datetime.now().date() + timedelta(days=HouseKeeping.days_till_openeve())
-        logging.debug(f"The next Open Evening should be happening: "
+        """ returns datetime object with next OpenEve from Discourse event"""
+        if not Discourse.do_we_have_an_event():
+            logging.error(f"next_openeve: No event found on Discourse")
+            return None
+        event = Discourse.get_openeve_date_and_url()[0]
+        logging.debug(f"The next Open Evening: "
                       f"{event.strftime('%A, %d %B')}")
         return event
-    # TODO: Should be done with event date from discourse calendar.
+
     @staticmethod
     def do_we_have_an_event():
+        """ returns boolean if event present on Discourse calendar"""
         event_info = Discourse.get_openeve_date_and_url()
         if event_info is None:
             logging.error(f"slmschimp: No Discourse event found in calendar.")
             return False
-
-        event_date = event_info[0]
-
-        if HouseKeeping.next_openeve() == event_date:
-            logging.debug(f"slmschimp: We're all good. Discourse event shows:"
-                          f" {event_date.strftime('%A, %d %B')}")
-            return True
-        elif event_date > HouseKeeping.next_openeve():
-            logging.info("slmschimp: Event date lies past next calculated OE Event!")
-            return True
         else:
-            return False
+            logging.debug(f"slmschimp: We're all good. Discourse event shows:"
+                          f" {event_info[0].strftime('%A, %d %B')}")
+            return True
 
 
 def main():
@@ -1076,12 +1060,11 @@ def main():
         automation.status()
 
     if args.auto:
-        # TODO: Should be done with discourse event! 
-        if datetime.now().date() == HouseKeeping.next_openeve():
+        if datetime.now().date() == Discourse.next_openeve():
             logging.warning("Today is Open Evening! No invitation unless "
                             "argument -f / --force is used.")
         elif args.auto and not args.force:
-            if HouseKeeping.do_we_have_an_event():
+            if Discourse.do_we_have_an_event():
                 logging.debug("slmschimp: Found Discourse event for next Open"
                               " Eve. **Everything's Chimpy!**")
                 processed_ids = automation.automate()
@@ -1109,7 +1092,7 @@ def main():
         logging.info(f"OE URL from most recent campaign: {campaign_date_and_url[1]}")
         logging.info(f"Most recent OE Discourse event: {Discourse.get_openeve_date_and_url()[1]}")
 
-    if datetime.now().date() == HouseKeeping.next_openeve():
+    if datetime.now().date() == Discourse.next_openeve():
         logging.warning(f"Today is open evening. Campaign content and url need updating!")
 
     if processed_ids:
