@@ -89,11 +89,13 @@ class DataProvider:
 
     def get_survey_responses(self):
         if self.survey_responses is None:
+            logging.info("get_survey_responses: getting survey responses...(may take a while)")
             self.survey_responses = self.api.get_survey_responses()
         return self.survey_responses
 
     def get_list_members_info(self):
         if self.list_members_info is None:
+            logging.info("get_list_members_info: getting list_members info")
             self.list_members_info = self.api.get_list_members_info()
         return self.list_members_info
 
