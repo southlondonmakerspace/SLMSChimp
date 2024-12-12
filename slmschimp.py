@@ -812,10 +812,14 @@ class Discourse:
 
     @staticmethod
     def send_private_msg(subject, message):
+        """
+        target_usernames is deprecated. See:
+        https://docs.discourse.org/#tag/Posts/operation/createTopicPostPM
+        """
         url = Discourse.base_url + '/posts.json'
         data = {'title': f'{subject}',
                 'raw': f'{message}',
-                'target_usernames': 'Geraetefreund',
+                'target_recipients': 'Geraetefreund',
                 'archetype': 'private_message'}
         response = requests.post(url, headers=Discourse.headers, data=data)
         if response.status_code == 200:
