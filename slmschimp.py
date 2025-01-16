@@ -546,54 +546,53 @@ class Automation:
                          f" index {index}.")
             return None
 
-    def get_field(self, contact_id, field_name):
-        contact_details = ['email', 'contact_id', 'status', 'full_name']
-        survey_responses_fields = ['response_id', 'submitted_at']
-        survey_result_fields = ['is_18+', 'discourse_name']
-        field_value = None
-        if field_name in contact_details:
-            for response in self.survey_responses['responses']:
-                if contact_id == response.get('contact').get('contact_id'):
-                    field_value = response.get('contact').get(field_name).strip()
-        elif field_name in survey_responses_fields:
-            for response in self.survey_responses['responses']:
-                if contact_id == response.get('contact').get('contact_id'):
-                    field_value = response.get(field_name)
-        elif field_name in survey_result_fields:
-            for response in self.survey_responses['responses']:
-                if contact_id == response.get('contact').get('contact_id'):
-                    response_id = response.get('response_id')
-                    survey = automation.api.get_survey_result(response_id)
-                    if field_name == 'is_18+':
-                        """ Fall back check if survey has been filled in before age check was implemented."""
-                        """ Checking whether the tag was added by mailchimp"""
-                        tags = self.api.list_tags(contact_id)['tags']
-                        field_value = any(tag['id'] == 10181290 for tag in tags)
-                    elif field_name == 'discourse_name':
-                        query = next(item['answer'] for item in survey['results'] if item['question_id'] == "29030")
-                        return query.strip().replace(" ", "").split("\n")[-1] if query else None
-        elif field_name == 'has_invite_tag':
-            tags = self.api.list_tags(contact_id)['tags']
-            # field_value = any(item['id'] == 10183946 for item in tags)
-            # field_value = any(item['id'] == 10201597 for item in tags)
-            field_value = any(item['id'] == 10201605 for item in tags)  # tag = slmschimp
-        return field_value
+    def get_email(self, contact_id):
+        for response in self.survey_responses['responses']:
+            if contact_id == response.get('contact').get('contact_id'):
+                return response.get('contact').get('email').strip()
+        return None
 
-    def restore_mark(self):
-        """ just for dev/debug purposes, so we can play with the script"""
-        contact_id1 = "4eeba0d90e3e0431271a87937d62ea13"
-        contact_id2 = "74cee5f369732ed3a9f496033536afd3"
-        self.api.unarchive(contact_id1)
-        self.api.unarchive(contact_id2)
+    def get_status(self, contact_id):
+        for response in self.survey_responses['responses']:
+            if contact_id == response.get('contact').get('contact_id'):
+                return response.get('contact').get('status')
+        return None
 
-    def remove_mark(self):
-        contact_id1 = "4eeba0d90e3e0431271a87937d62ea13"
-        contact_id2 = "74cee5f369732ed3a9f496033536afd3"
-        self.api.rem_tag(contact_id1, 'slmschimp')
+    def get_full_name(self, contact_id):
+        for response in self.survey_responses['responses']:
+            if contact_id == response.get('contact').get('contact_id'):
+                return response.get('contact').get('full_name').strip()
+        return None
 
-        self.api.rem_tag(contact_id2, 'slmschimp')
-        self.api.archive(contact_id1)
-        self.api.archive(contact_id2)
+    def get_response_id(self, contact_id):
+        for response in self.survey_responses['responses']:
+            if contact_id == response.get('contact').get('contact_id'):
+                return response.get('response_id')
+        return None
+
+    def get_submitted_at(self, contact_id):
+        for response in self.survey_responses['responses']:
+            if contact_id == response.get('contact').get('contact_id'):
+                return response.get('submitted_at')
+        return None
+
+    def get_discourse_name(self, contact_id):
+        for response in self.survey_responses['responses']:
+            if contact_id == response.get('contact').get('contact_id'):
+                response_id = self.get_response_id(contact_id)
+                survey = automation.api.get_survey_result(response_id)
+                query = next(item['answer'] for item in survey['results'] if item['question_id'] == "29030")
+                return query.strip().replace(" ", "").split("\n")[-1] if query else None
+
+    def is_of_legal_age(self, contact_id):
+        """ Checking whether the tag was added by mailchimp"""
+        tags = self.api.list_tags(contact_id)['tags']
+        return any(tag['id'] == 10181290 for tag in tags)
+
+    def has_invite_tag(self, contact_id):
+        tags = self.api.list_tags(contact_id)['tags']
+        return any(item['id'] == 10201605 for item in tags)  # tag = slmschimp
+
 
     @staticmethod
     def find_campaign_date_and_url(campaign_content):
@@ -649,11 +648,11 @@ class Automation:
             member_data_list = []
             for member in list(range(self.total_items())):
                 contact_id = self.contact_id(member)
-                email = self.get_field(contact_id, 'email')
-                member_status = self.get_field(contact_id, 'status')
-                response_id = self.get_field(contact_id, 'response_id')
-                is_18 = self.get_field(contact_id, 'is_18+')
-                invited = self.get_field(contact_id, 'has_invite_tag')
+                email = self.get_email(contact_id)
+                member_status = self.get_status(contact_id)
+                response_id = self.get_response_id(contact_id)
+                is_18 = self.is_of_legal_age(contact_id)
+                invited = self.has_invite_tag(contact_id)
                 member_data = {
                     'Member': member,
                     'Email': email,
@@ -674,10 +673,11 @@ class Automation:
         else:
             logging.info(f"status: We have no survey results. Nothing to do.")
 
+
     def automate(self):
         iso_date = datetime.now().date().isoformat()
         num_surveys = self.total_items()
-        processed_ids = []
+        processed_ids = [] 
         if num_surveys is None:
             logging.info("automate: No Survey results. Nothing to"
                          " do. Everything's Chimpy!")
@@ -686,36 +686,37 @@ class Automation:
                          f"{num_surveys} list members.")
             for survey in list(range(num_surveys)):
                 contact_id = self.contact_id(survey)
-                if self.get_field(contact_id, 'status') == "Subscribed":
+                subscriber_status = self.get_status(contact_id)
+                email = self.get_email(contact_id)
+
+                if subscriber_status == "Subscribed":
                     logging.debug(f"automate: List member {survey} already subscribed.")
                 else:
-                    """ needs to be done this way, unfortunately. Bruteforce4tw! """
-                    self.api.unsubscribe(contact_id, self.get_field(contact_id, 'email'))
+                    """ sadly, this is the way the API wants it... sigh!"""
+                    self.api.unsubscribe(contact_id, email)
                     time.sleep(2)
-                    self.api.subscribe(contact_id, self.get_field(contact_id, 'email'))
-                if not self.get_field(contact_id, 'has_invite_tag'):
-                    if self.get_field(contact_id, 'is_18+'):
+                    self.api.subscribe(contact_id, email)
+
+                if self.is_of_legal_age(contact_id):
+                    if not self.has_invite_tag(contact_id):
                         self.api.add_tag(contact_id, f"Invited-{iso_date}")
                         self.api.add_tag(contact_id, 'slmschimp')
-                    elif not self.get_field(contact_id, 'is_18+'):
-                        logging.warning(f"automate: Member {survey} not 18+. Adding tag 'NoSend' and unsubscribing.")
-                        self.api.add_tag(contact_id, 'NoSend')
-                        self.api.unsubscribe(contact_id, self.get_field(contact_id, 'email'))
-                elif self.get_field(contact_id, 'has_invite_tag'):
-                    logging.debug(f"automate: Member {survey} already tagged: 'slmschimp'.")
-                    self.api.add_tag(contact_id, f'Invited-{iso_date}')
-                    self.api.add_tag(contact_id, 'slmschimp')  # this is here for a reason! (restore_mark())
-            if self.api.draft_campaign_id() is None:
-                self.api.create_campaign()
-                campaign_content = self.api.get_campaign_content(self.api.last_campaign_id())
-                updated_content = self.update_campaign_content(campaign_content, Discourse.get_openeve_date_and_url())
-                self.api.set_campaign_content(self.api.draft_campaign_id(), updated_content)
-            else:
-                logging.info(f'automate: Draft campaign {self.api.draft_campaign_id} present!')
-                self.api.create_campaign()
-                campaign_content = self.api.get_campaign_content(self.api.last_campaign_id())
-                updated_content = self.update_campaign_content(campaign_content, Discourse.get_openeve_date_and_url())
-                self.api.set_campaign_content(self.api.draft_campaign_id(), updated_content)
+                else: 
+                    logging.warning(f"automate: Member {survey} not 18+")
+                    self.api.add_tag(contact_id, 'NoSend')
+                    """ only subscribed members will be invited! """
+                    self.api.unsubscribe(contact_id, email) 
+
+                processed_ids.append(contact_id)
+
+            """ create new campaing and update content, i.e. OE Date and URL"""
+            self.api.create_campaign()
+            campaign_content = self.api.get_campaign_content(self.api.last_campaign_id())
+            updated_content = self.update_campaign_content(
+                campaign_content, Discourse.get_openeve_date_and_url())
+            self.api.set_campaign_content(self.api.draft_campaign_id(), updated_content)
+            
+            """ send newly created campaign""" 
             try:
                 self.api.send_campaign(self.api.draft_campaign_id())
             except Exception as error:
@@ -724,35 +725,43 @@ class Automation:
             while self.api.check_sending():
                 logging.debug("automate: Campaign still sending. Waiting 5s...")
                 time.sleep(5)
-            for survey in list(reversed(range(num_surveys))):
-                """ I use reversed here for no reason! Scratching_head..."""
-                contact_id = self.contact_id(survey)
-                if self.get_field(contact_id, 'has_invite_tag'):
-                    processed_ids.append(contact_id)
-                    self.api.archive(contact_id)
-                elif not self.get_field(contact_id, 'is_18+'):
-                    logging.warning(f"automate: List member is not 18+: "
-                                    f"{self.get_field(contact_id, 'email')}")
+
             logging.info(f"automate: Successfully processed "
                          f"{num_surveys} list members.")
             logging.info(f"automate: Successfully sent campaign: "
                          f"[{self.api.last_campaign_id()}]"
                          f"(https://us3.admin.mailchimp.com/reports/summary?"
                          f"id={self.api.last_campaign_web_id()})")
+
+            for contact_id in processed_ids:
+                self.api.archive(contact_id)
+
         return processed_ids
 
     def collect_member_info(self, collected_ids):
         user_info = []
         for contact_id in collected_ids:
-            result = [
-                datetime.now().date().isoformat(),  # item[0]
-                self.get_field(contact_id, 'full_name'),  # item[1]
-                self.get_field(contact_id, 'email'),  # item[2]
-                self.get_field(contact_id, 'response_id'),  # item[3]
-                self.api.last_campaign_id(),  # item[4]
-                self.get_field(contact_id, 'discourse_name'),  # item[5]
-                contact_id]  # item[6]
-            user_info.append(result)
+            if self.is_of_legal_age(contact_id):
+                result = [
+                    datetime.now().date().isoformat(),  # item[0]
+                    self.get_full_name(contact_id),     # item[1]
+                    self.get_email(contact_id),         # item[2]
+                    self.get_response_id(contact_id),   # item[3]
+                    self.api.last_campaign_id(),        # item[4]
+                    self.get_discourse_name(contact_id),# item[5]
+                    contact_id]                         # item[6]
+                user_info.append(result)
+            else: 
+                result = [
+                    f":warning: {datetime.now().date().isoformat()}",  # item[0]
+                    self.get_full_name(contact_id),     # item[1]
+                    f":warnung: {self.get_email(contact_id)}",         # item[2]
+                    self.get_response_id(contact_id),   # item[3]
+                    ":warning: NOT_18+",                # item[4]
+                    self.get_discourse_name(contact_id),# item[5]
+                    contact_id]                         # item[6]
+                user_info.append(result)
+
         return user_info
 
 
@@ -811,16 +820,13 @@ class Discourse:
         return response
 
     @staticmethod
-    def send_private_msg(subject, message):
-        """
-        target_usernames is deprecated. See:
-        https://docs.discourse.org/#tag/Posts/operation/createTopicPostPM
-        """
+    def send_alert_to_welcome(subject, message):
         url = Discourse.base_url + '/posts.json'
         data = {'title': f'{subject}',
                 'raw': f'{message}',
-                'target_recipients': 'Geraetefreund',
-                'archetype': 'private_message'}
+                'target_recipients': 'welcome',
+                'archetype': 'private_message',
+                }
         response = requests.post(url, headers=Discourse.headers, data=data)
         if response.status_code == 200:
             logging.debug(f'send_private_msg: Reply posted successfully!')
