@@ -136,7 +136,8 @@ class MailChimpAPI:
     def get_list_members_info(self):
         """ Get info about survey responses on our list."""
         url = self.url + f"/lists/{self.list_id}/members"
-        payload = {'exclude_fields': 'members.interests,members.stats'}
+        payload = {'count': 1000,
+                   'exclude_fields': 'members.interests,members.stats'}
         response = None
         try:
             response = requests.get(url, params=payload, auth=self.auth)
