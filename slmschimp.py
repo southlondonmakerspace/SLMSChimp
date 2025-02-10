@@ -504,8 +504,8 @@ class Automation:
             logging.info(f'process_responses: There are {self.total_items()} survey responses to process.')
             list_members_info = mc.get_list_members_info()
             logging.debug('process_responses: successfully retrieved list_member_info')
-            logging.debug('process_responses: successfully retrieved survey_responses')
             survey_responses = mc.get_survey_responses()
+            logging.debug('process_responses: successfully retrieved survey_responses')
 
             for list_member in list_members_info['members']:
                 result = {} # just because.
@@ -629,21 +629,18 @@ class Automation:
             iso_date = datetime.now().date().isoformat()
             for member in processed_responses:
                 contact_id = member['contact_id']
-                response_id = member['response_id']
                 email = member['survey_result']['contact']['email']
                 subscriber_status = member['survey_result']['contact']['status']
-                is_18 = any(tag['id'] == 10181290 for tag in member['tags'])
-                invited = any(tag['id'] == 10201605 for tag in member['tags'])
 
                 if subscriber_status == "Subscribed":
-                    logging.debug(f"automate: List member {survey} already subscribed.")
+                    logging.debug(f"automate: List member {email} already subscribed.")
                 else:
                     """ sadly, this is the way the API wants it... sigh!"""
                     self.api.unsubscribe(contact_id, email)
                     time.sleep(2)
                     self.api.subscribe(contact_id, email)
                 
-                if is_18:
+                if member['is18+']:
                     self.api.add_tag(contact_id, f"Invited-{iso_date}")
                     self.api.add_tag(contact_id, 'slmschimp')
                 else: 
