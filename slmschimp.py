@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 # South London Makerspace way over-engineered MailChimp Survey Invitation
-# Automation version 1.0
+# Automation version 1.1
 # slmschimp.py (perhaps slmswoemsia.py would be more appropriate?)
 # Thank you, Kyle, for the inspiration and the support.
 # Geraetefreund, 2023-09-09 (Nine Oh Nine!)
