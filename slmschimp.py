@@ -524,7 +524,7 @@ class Automation:
 
                 processed_responses.append(result)
         else: 
-            print('No surveys. Nothing to do.')
+            logging.info('process_responses: No surveys. Nothing to do.')
         return processed_responses
 
     def total_items(self):
@@ -621,7 +621,8 @@ class Automation:
 
 
     def automate(self, processed_responses):
-        if not processed_responses:
+        processed_ids = []
+        if processed_responses == []:
             logging.info('automate: Nothing to do. No survey results, everything is chimpy!')
         else:
             logging.info(f'automate: start processing {len(processed_responses)} survey responses')
@@ -1061,7 +1062,7 @@ def main():
 
     if args.auto and args.force:
         logging.warning("automate: started with --force argument.")
-        processed_ids = automation.automate()
+        processed_ids = automation.automate(processed_responses)
 
     if args.campaign_info:
         campaign_date_and_url = automation.find_campaign_date_and_url(mc.get_campaign_content(mc.last_campaign_id()))
