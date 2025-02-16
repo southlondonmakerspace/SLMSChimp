@@ -1089,7 +1089,12 @@ def main():
 
 if __name__ == '__main__':
     logging.info('SLMSChimp v1.1 ')
+    if not os.path.exists('.env'):
+        logging.info('main: .env file missing. Can not execute slmschimp.')
+        exit(1)
+
     mc = MailChimpAPI()
     automation = Automation()
     processed_responses = automation.process_responses()
     main()
+
