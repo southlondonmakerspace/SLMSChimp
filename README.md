@@ -1,16 +1,14 @@
 # slmschimp
-### version 1.0
+### version 1.1
 
 to run
  - .env file with credentials
- - create venv and activate,
- - pip3 install -r requirements.txt and
-
-if in doubt: https://docs.python.org/3/library/venv.html
+ - create venv and activate, (`python3 -m venv venv`)
+ - install requirements (`pip3 install -r requirements.txt`)
 
 To run successfully, the script needs an event for an open evening on the
 Discourse calendar. The automation is suspended on open evenings (every
-other Wednesday). 
+other Wednesday but can be forced if necessary). 
 
 ### Usage
 ~~~

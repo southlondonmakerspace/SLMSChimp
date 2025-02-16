@@ -1,13 +1,24 @@
 #!/usr/bin/env python3
 #
 # South London Makerspace way over-engineered MailChimp Survey Invitation
-# Automation version 1.0
+# Automation version 1.1
 # slmschimp.py (perhaps slmswoemsia.py would be more appropriate?)
 # Thank you, Kyle, for the inspiration and the support.
 # Geraetefreund, 2023-09-09 (Nine Oh Nine!)
 
+""" check if the venv is activated 
+    if active venv, sys.prefix != sys.base_prefix """
+import sys
+if sys.prefix == sys.base_prefix:
+    print("ERROR: venv not activated")
+    sys.exit(1)
 
+""" check if .env file is present"""
 import os
+if not os.path.exists('.env'):
+    print('ERROR: .env file missing. Can not execute slmschimp.')
+    sys.exit(1)
+
 import json
 import re
 import time
@@ -77,39 +88,6 @@ list_handler.setFormatter(formatter)
 logger.addHandler(list_handler)
 
 
-class DataProvider:
-    """ survey_responses takes a long time to download. DataProvider makes
-     sure we only download them once. """
-
-    def __init__(self):
-        self.api = MailChimpAPI()
-        self.survey_responses = None
-        self.list_members_info = None
-        self.last_campaign_content = None
-
-    def get_survey_responses(self):
-        if self.survey_responses is None:
-            logging.info("get_survey_responses: getting survey responses...(may take a while)")
-            self.survey_responses = self.api.get_survey_responses()
-        return self.survey_responses
-
-    def get_list_members_info(self):
-        if self.list_members_info is None:
-            logging.info("get_list_members_info: getting list_members info")
-            self.list_members_info = self.api.get_list_members_info()
-        return self.list_members_info
-
-    def get_total_items(self):
-        result = self.list_members_info['total_items']
-        return result if result else None
-
-    def get_last_campaign_content(self):
-        if self.last_campaign_content is None:
-            self.last_campaign_content = (
-                self.api.get_campaign_content(self.api.last_campaign_id()))
-        return self.last_campaign_content
-
-
 class MailChimpAPI:
     """ MailChimp API related methods """
 
@@ -136,7 +114,8 @@ class MailChimpAPI:
     def get_list_members_info(self):
         """ Get info about survey responses on our list."""
         url = self.url + f"/lists/{self.list_id}/members"
-        payload = {'exclude_fields': 'members.interests,members.stats'}
+        payload = {'count': 1000,
+                   'exclude_fields': 'members.interests,members.stats'}
         response = None
         try:
             response = requests.get(url, params=payload, auth=self.auth)
@@ -422,8 +401,8 @@ class MailChimpAPI:
 
     def list_tags(self, contact_id):
         url = self.url + f"/lists/{self.list_id}/members/{contact_id}/tags"
-        """ Thank you mailchimp for defaulting to 10. NOT! """
-        params = {'count': 100}
+        """ Thank you mailchimp for changing default from 25 to 10. m) Why? """
+        params = {'count': 100} # tempted to use 1000 though...
         response = None
         try:
             response = requests.get(url, params=params, auth=self.auth)
@@ -469,7 +448,7 @@ class MailChimpAPI:
                           f"'{contact_id}'. {response.json()}")
 
     def unarchive(self, contact_id):
-        """ MC has no endpoint to unarchive, set status to unsubscribed. """
+        """ MC-API has no endpoint to unarchive yet, set status to unsubscribed. """
         url = self.url + f"/lists/{self.list_id}/members/{contact_id}"
         payload = {'status': 'unsubscribed'}
         response = None
@@ -525,74 +504,56 @@ class MailChimpAPI:
 
 # noinspection SpellCheckingInspection
 class Automation:
-    def __init__(self, list_members, surveys):
+    def __init__(self):
         self.api = MailChimpAPI()
-        self.list_members_info = list_members
-        self.survey_responses = surveys
+        self.list_members_info = self.api.get_list_members_info()
+        self.survey_responses = self.api.get_survey_responses()
+
+    def process_responses(self):
+        processed_responses = []
+        if self.total_items():
+            logging.info(f'process_responses: There are {self.total_items()} survey responses to process.')
+            list_members_info = mc.get_list_members_info()
+            logging.debug('process_responses: successfully retrieved list_member_info')
+            survey_responses = mc.get_survey_responses()
+            logging.debug('process_responses: successfully retrieved survey_responses')
+
+            for list_member in list_members_info['members']:
+                result = {} # just because.
+                contact_id = list_member['contact_id']
+                response_id = self.get_response_id(contact_id)
+                survey_result = self.api.get_survey_result(response_id)
+
+                result['list_member'] = list_member
+                result['contact_id'] = contact_id
+                result['response_id'] = response_id
+                result['survey_result'] = self.api.get_survey_result(response_id)
+                result['tags'] = self.api.list_tags(contact_id)['tags']
+                result['has_invite_tag'] = any(tag['id'] == 10201605 for tag in list_member['tags'])  # tag=slmschimp
+                result['is18+'] = any(tag['id'] == 10181290 for tag in list_member['tags'])
+                result['discourse_name'] = self.get_discourse_name(survey_result)
+
+                processed_responses.append(result)
+        else: 
+            logging.info('process_responses: No surveys. Nothing to do.')
+        return processed_responses
 
     def total_items(self):
-        total_items = self.list_members_info['total_items']
-        if total_items == 0:
-            return None
-        else:
-            return total_items
-
-    def contact_id(self, index):
-        try:
-            contact_id = self.list_members_info['members'][index].get('contact_id')
-            return contact_id
-        except IndexError:
-            logging.info(f"contact_id: Nothing to do. No survey response for"
-                         f" index {index}.")
-            return None
-
-    def get_email(self, contact_id):
-        for response in self.survey_responses['responses']:
-            if contact_id == response.get('contact').get('contact_id'):
-                return response.get('contact').get('email').strip()
-        return None
-
-    def get_status(self, contact_id):
-        for response in self.survey_responses['responses']:
-            if contact_id == response.get('contact').get('contact_id'):
-                return response.get('contact').get('status')
-        return None
-
-    def get_full_name(self, contact_id):
-        for response in self.survey_responses['responses']:
-            if contact_id == response.get('contact').get('contact_id'):
-                return response.get('contact').get('full_name').strip()
-        return None
+        return self.list_members_info['total_items'] or None
 
     def get_response_id(self, contact_id):
-        for response in self.survey_responses['responses']:
-            if contact_id == response.get('contact').get('contact_id'):
-                return response.get('response_id')
-        return None
+        return next(
+            (response['response_id'] for response in self.survey_responses['responses']
+            if response.get('contact', {}).get('contact_id') == contact_id), None) 
 
-    def get_submitted_at(self, contact_id):
-        for response in self.survey_responses['responses']:
-            if contact_id == response.get('contact').get('contact_id'):
-                return response.get('submitted_at')
-        return None
+    """ response.get('contact', {}) – If 'contact' exists, it returns its value. Otherwise, 
+        it returns {} (an empty dictionary). {} is safe to call .get('contact_id') on because
+        it simply returns None instead of raising an error.
+    """
 
-    def get_discourse_name(self, contact_id):
-        for response in self.survey_responses['responses']:
-            if contact_id == response.get('contact').get('contact_id'):
-                response_id = self.get_response_id(contact_id)
-                survey = automation.api.get_survey_result(response_id)
-                query = next(item['answer'] for item in survey['results'] if item['question_id'] == "29030")
-                return query.strip().replace(" ", "").split("\n")[-1] if query else None
-
-    def is_of_legal_age(self, contact_id):
-        """ Checking whether the tag was added by mailchimp"""
-        tags = self.api.list_tags(contact_id)['tags']
-        return any(tag['id'] == 10181290 for tag in tags)
-
-    def has_invite_tag(self, contact_id):
-        tags = self.api.list_tags(contact_id)['tags']
-        return any(item['id'] == 10201605 for item in tags)  # tag = slmschimp
-
+    def get_discourse_name(self, survey_result):
+        query = next(item['answer'] for item in survey_result['results'] if item['question_id'] == "29030")
+        return query.strip().replace(" ", "").split("\n")[-1] if query else None
 
     @staticmethod
     def find_campaign_date_and_url(campaign_content):
@@ -641,74 +602,67 @@ class Automation:
             campaign_content['html'] = updated_content
         return campaign_content
 
-    def status(self):
-        if self.total_items():
-            logging.info(f"status: There are currently "
-                         f"{self.total_items()} survey results.")
+    def status(self, processed_responses):
+        if processed_responses:
             member_data_list = []
-            for member in list(range(self.total_items())):
-                contact_id = self.contact_id(member)
-                email = self.get_email(contact_id)
-                member_status = self.get_status(contact_id)
-                response_id = self.get_response_id(contact_id)
-                is_18 = self.is_of_legal_age(contact_id)
-                invited = self.has_invite_tag(contact_id)
+            for member in processed_responses:
+                contact_id = member['contact_id']
+                response_id = member['response_id']
+                email = member['survey_result']['contact']['email']
+                subscriber_status = member['survey_result']['contact']['status']
+                is_18 = any(tag['id'] == 10181290 for tag in member['tags'])
+                invited = any(tag['id'] == 10201605 for tag in member['tags'])
                 member_data = {
-                    'Member': member,
                     'Email': email,
-                    'Status': member_status,
+                    'Status': subscriber_status,
                     'Is 18+': is_18,
                     'Response ID': response_id,
                     'Invited': invited}
                 member_data_list.append(member_data)
-            tabular_data = [[member_data['Member'],
-                             member_data['Email'],
+            tabular_data = [[member_data['Email'],
                              member_data['Status'],
                              member_data['Is 18+'],
                              member_data['Response ID'],
                              member_data['Invited']] for member_data in member_data_list]
             # column headers, oh so pretty.
-            headers = ['Member', 'Email', 'Status', 'Is 18+', 'Response ID', 'Invited']
+            headers = ['Email', 'Status', 'Is 18+', 'Response ID', 'Invited']
             print(tabulate(tabular_data, headers=headers, tablefmt="simple"))
         else:
             logging.info(f"status: We have no survey results. Nothing to do.")
 
 
-    def automate(self):
-        iso_date = datetime.now().date().isoformat()
-        num_surveys = self.total_items()
-        processed_ids = [] 
-        if num_surveys is None:
-            logging.info("automate: No Survey results. Nothing to"
-                         " do. Everything's Chimpy!")
+    def automate(self, processed_responses):
+        processed_ids = []
+        if processed_responses == []:
+            logging.info('automate: Nothing to do. No survey results, everything is chimpy!')
         else:
-            logging.info(f"automate: Started automation for "
-                         f"{num_surveys} list members.")
-            for survey in list(range(num_surveys)):
-                contact_id = self.contact_id(survey)
-                subscriber_status = self.get_status(contact_id)
-                email = self.get_email(contact_id)
+            logging.info(f'automate: start processing {len(processed_responses)} survey responses')
+            processed_ids = [] # we want to archive the contacts after succsessful send!
+            iso_date = datetime.now().date().isoformat()
+            for member in processed_responses:
+                contact_id = member['contact_id']
+                email = member['survey_result']['contact']['email']
+                subscriber_status = member['survey_result']['contact']['status']
 
                 if subscriber_status == "Subscribed":
-                    logging.debug(f"automate: List member {survey} already subscribed.")
+                    logging.debug(f"automate: List member {email} already subscribed.")
                 else:
                     """ sadly, this is the way the API wants it... sigh!"""
                     self.api.unsubscribe(contact_id, email)
                     time.sleep(2)
                     self.api.subscribe(contact_id, email)
-
-                if self.is_of_legal_age(contact_id):
-                    if not self.has_invite_tag(contact_id):
-                        self.api.add_tag(contact_id, f"Invited-{iso_date}")
-                        self.api.add_tag(contact_id, 'slmschimp')
+                
+                if member['is18+']:
+                    self.api.add_tag(contact_id, f"Invited-{iso_date}")
+                    self.api.add_tag(contact_id, 'slmschimp')
                 else: 
-                    logging.warning(f"automate: Member {survey} not 18+")
+                    logging.warning(f"automate: Member email: {email}, contact_id: {contact_id} not 18+!")
                     self.api.add_tag(contact_id, 'NoSend')
                     """ only subscribed members will be invited! """
                     self.api.unsubscribe(contact_id, email) 
 
                 processed_ids.append(contact_id)
-
+                    
             """ create new campaing and update content, i.e. OE Date and URL"""
             self.api.create_campaign()
             campaign_content = self.api.get_campaign_content(self.api.last_campaign_id())
@@ -727,7 +681,7 @@ class Automation:
                 time.sleep(5)
 
             logging.info(f"automate: Successfully processed "
-                         f"{num_surveys} list members.")
+                         f"{len(processed_responses)} list members.")
             logging.info(f"automate: Successfully sent campaign: "
                          f"[{self.api.last_campaign_id()}]"
                          f"(https://us3.admin.mailchimp.com/reports/summary?"
@@ -736,30 +690,33 @@ class Automation:
             for contact_id in processed_ids:
                 self.api.archive(contact_id)
 
-        return processed_ids
+            Discourse.send_to_welcome_table(processed_responses)
 
-    def collect_member_info(self, collected_ids):
+        return processed_ids # we might just as well... 
+
+    def collect_member_info(self, processed_responses):
+        """ used for the welcome table on SLMS """
         user_info = []
-        for contact_id in collected_ids:
-            if self.is_of_legal_age(contact_id):
+        for contact in processed_responses:
+            if contact['is18+']:
                 result = [
-                    datetime.now().date().isoformat(),  # item[0]
-                    self.get_full_name(contact_id),     # item[1]
-                    self.get_email(contact_id),         # item[2]
-                    self.get_response_id(contact_id),   # item[3]
-                    self.api.last_campaign_id(),        # item[4]
-                    self.get_discourse_name(contact_id),# item[5]
-                    contact_id]                         # item[6]
+                        datetime.now().date().isoformat(),           #item[0]
+                        contact['list_member']['full_name'],         #item[1]
+                        contact['list_member']['email_address'],     #item[2]
+                        contact['response_id'],                      #item[3]
+                        self.api.last_campaign_id(),                 #item[4]
+                        self.get_discourse_name(contact['survey_result']), #item[5]
+                        contact['contact_id']]                       #item[6]
                 user_info.append(result)
-            else: 
+            else:
                 result = [
-                    f":warning: {datetime.now().date().isoformat()}",  # item[0]
-                    self.get_full_name(contact_id),     # item[1]
-                    f":warnung: {self.get_email(contact_id)}",         # item[2]
-                    self.get_response_id(contact_id),   # item[3]
-                    ":warning: NOT_18+",                # item[4]
-                    self.get_discourse_name(contact_id),# item[5]
-                    contact_id]                         # item[6]
+                    f":warning: {datetime.now().date().isoformat()}",   #item[0]
+                    contact['list_member']['full_name'],                #item[1]
+                    f":warning: {contact['list_member']['email_address']}", # item[2]
+                    contact['response_id'],                             #item[3]
+                    ":warning: NOT_18+",                                #item[4]
+                    self.get_discourse_name(contact['survey_result']),     #item[5]
+                    contact['contact_id']]                              #item[6]
                 user_info.append(result)
 
         return user_info
@@ -899,8 +856,8 @@ class Discourse:
         now = datetime.now()
         month_year = now.strftime("%B %Y")
         raw_content = f'## SLMSchimp Logs {month_year}'
-        raw_content += f'\n[details ="SLMSchimp Logs {month_year}"]\n'
-        raw_content += '\n[/details]'
+        raw_content += f'\n<details><summary>SLMSchimp Logs {month_year}></summary>\n'
+        raw_content += '\n</details>'
         data = {'topic_id': os.getenv('LOG_TOPIC_ID'),
                 'raw': raw_content}
         response = requests.post(url, headers=Discourse.headers, data=data)
@@ -928,8 +885,8 @@ class Discourse:
         latest_log_post = Discourse.retrieve_single_post(most_recent_post_id)
         llp_raw = latest_log_post.json().get('raw')
         # let's remove the final [/details]
-        if llp_raw.endswith("\n[/details]"):
-            llp_raw = llp_raw[:-len("\n[/details]")]
+        if llp_raw.endswith("\n</details>"):
+            llp_raw = llp_raw[:-len("\n</details>")]
 
         # let's check if we need a new reply first
         pattern = (r'(\b(?:January|February|March|April|May|June|July|August|September|October|'
@@ -964,14 +921,16 @@ class Discourse:
             latest_log_post = Discourse.retrieve_single_post(most_recent_post_id)
             llp_raw = latest_log_post.json().get('raw')
             # let's remove the final [/details]
-            if llp_raw.endswith("\n[/details]"):
-                llp_raw = llp_raw[:-len("\n[/details]")]
+            if llp_raw.endswith("\n</details>"):
+                llp_raw = llp_raw[:-len("\n</details>")]
 
         log_date = datetime.now().strftime("%Y-%m-%d | %H:%M")
-        log_entry = f'\n[details ="{log_date}"]\n'
+        log_entry = f'\n<details><summary>{log_date}</summary>'
+        log_entry += '\n<pre>'
         log_entry += '\n'.join(list_handler.log_records)
-        log_entry += '\n[/details]'
-        log_entry += '\n[/details]'  # twice because we've removed the final one.
+        log_entry += '\n</pre>'
+        log_entry += '\n</details>'
+        log_entry += '\n</details>'  # twice because we've removed the final one.
 
         updated_log_post = llp_raw + log_entry
 
@@ -984,6 +943,32 @@ class Discourse:
         except Exception as error:
             logging.error(f'append_logs: {error}')
         return response
+
+
+    @staticmethod
+    def send_to_welcome_table(processed_responses):
+        if processed_responses:
+            Discourse.check_table_heading()  # check if we need a new heading for the table
+            log_info = automation.collect_member_info(processed_responses)
+            collected_objects = []
+            for item in log_info:
+                last_name = [name for name in item[1].split(' ') if name != '']
+                campaign_date = f'{item[0]}'
+                full_name = (f'[{item[1]}](https://southlondonmakerspace.org/wp-admin/users.php?'
+                             f's={last_name[-1]})')
+                email = (f'[{item[2]}](https://us3.admin.mailchimp.com/audience/contact-profile?'
+                         f'contact_id={item[6]})')
+                response_id = (f'[{item[3]}](https://us3.admin.mailchimp.com/lists/surveys/results?'
+                               f'survey_id=3410&tab=0&response_id={item[3]}&view=INDIVIDUAL_VIEW)')
+                campaign_id = (f'[{item[4]}](https://us3.admin.mailchimp.com/reports/summary?'
+                               f'id={mc.last_campaign_web_id()})')
+                discourse_name = f'[{item[5]}](https://discourse.southlondonmakerspace.org/u/{item[5]})'
+
+                collected_objects.append(f'\n |{campaign_date}|{full_name}|'
+                                         f'{email}|{response_id}|{campaign_id}|' f'{discourse_name}|')
+
+            combined_raw_data = ''.join(collected_objects)
+            Discourse.update_welcome_table(combined_raw_data)
 
     @staticmethod
     def update_welcome_table(raw):
@@ -1069,7 +1054,7 @@ def main():
         parser.print_help()
 
     if args.status:
-        automation.status()
+        automation.status(processed_responses)
 
     if args.auto:
         if datetime.now().date() == Discourse.next_openeve():
@@ -1079,7 +1064,7 @@ def main():
             if Discourse.do_we_have_an_event():
                 logging.debug("slmschimp: Found Discourse event for next Open"
                               " Eve. **Everything's Chimpy!**")
-                processed_ids = automation.automate()
+                processed_ids = automation.automate(processed_responses)
             else:
                 logging.warning("slmschimp: No event for next Open Eve on "
                                 "Discourse. **No Invitations will be sent** unless Discourse event is created.")
@@ -1090,7 +1075,7 @@ def main():
 
     if args.auto and args.force:
         logging.warning("automate: started with --force argument.")
-        processed_ids = automation.automate()
+        processed_ids = automation.automate(processed_responses)
 
     if args.campaign_info:
         campaign_date_and_url = automation.find_campaign_date_and_url(mc.get_campaign_content(mc.last_campaign_id()))
@@ -1107,40 +1092,20 @@ def main():
     if datetime.now().date() == Discourse.next_openeve():
         logging.warning(f"Today is open evening. Campaign content and url need updating!")
 
-    if processed_ids:
-        Discourse.check_table_heading()  # check if we need a new heading for the table
-        log_info = automation.collect_member_info(processed_ids)
-        collected_objects = []
-        for item in log_info:
-            last_name = [name for name in item[1].split(' ') if name != '']
-            campaign_date = f'{item[0]}'
-            full_name = (f'[{item[1]}](https://southlondonmakerspace.org/wp-admin/users.php?'
-                         f's={last_name[-1]})')
-            email = (f'[{item[2]}](https://us3.admin.mailchimp.com/audience/contact-profile?'
-                     f'contact_id={item[6]})')
-            response_id = (f'[{item[3]}](https://us3.admin.mailchimp.com/lists/surveys/results?'
-                           f'survey_id=3410&tab=0&response_id={item[3]}&view=INDIVIDUAL_VIEW)')
-            campaign_id = (f'[{item[4]}](https://us3.admin.mailchimp.com/reports/summary?'
-                           f'id={mc.last_campaign_web_id()})')
-            discourse_name = f'[{item[5]}](https://discourse.southlondonmakerspace.org/u/{item[5]})'
-
-            collected_objects.append(f'\n |{campaign_date}|{full_name}|'
-                                     f'{email}|{response_id}|{campaign_id}|' f'{discourse_name}|')
-
-        combined_raw_data = ''.join(collected_objects)
-        Discourse.update_welcome_table(combined_raw_data)
 
     if any(vars(args).values()) and not args.quiet:
         Discourse.append_logs()
 
+    if processed_ids:
+        logging.info(f'main: processed_ids: {processed_ids}')
+
 
 if __name__ == '__main__':
-    data_provider = DataProvider()
-    list_members_info = data_provider.get_list_members_info()
-    if data_provider.get_total_items():
-        survey_responses = data_provider.get_survey_responses()
-    else:
-        survey_responses = None
+    logging.info('SLMSChimp v1.1 ')
+    
+
     mc = MailChimpAPI()
-    automation = Automation(list_members_info, survey_responses)
+    automation = Automation()
+    processed_responses = automation.process_responses()
     main()
+
