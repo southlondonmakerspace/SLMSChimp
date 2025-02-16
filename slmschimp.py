@@ -6,8 +6,19 @@
 # Thank you, Kyle, for the inspiration and the support.
 # Geraetefreund, 2023-09-09 (Nine Oh Nine!)
 
+""" check if the venv is activated 
+    if active venv, sys.prefix != sys.base_prefix """
+import sys
+if sys.prefix == sys.base_prefix:
+    print("ERROR: venv not activated")
+    sys.exit(1)
 
+""" check if .env file is present"""
 import os
+if not os.path.exists('.env'):
+    print('ERROR: .env file missing. Can not execute slmschimp.')
+    sys.exit(1)
+
 import json
 import re
 import time
@@ -845,8 +856,8 @@ class Discourse:
         now = datetime.now()
         month_year = now.strftime("%B %Y")
         raw_content = f'## SLMSchimp Logs {month_year}'
-        raw_content += f'\n[details ="SLMSchimp Logs {month_year}"]\n'
-        raw_content += '\n[/details]'
+        raw_content += f'\n<details><summary>SLMSchimp Logs {month_year}></summary>\n'
+        raw_content += '\n</details>'
         data = {'topic_id': os.getenv('LOG_TOPIC_ID'),
                 'raw': raw_content}
         response = requests.post(url, headers=Discourse.headers, data=data)
@@ -874,8 +885,8 @@ class Discourse:
         latest_log_post = Discourse.retrieve_single_post(most_recent_post_id)
         llp_raw = latest_log_post.json().get('raw')
         # let's remove the final [/details]
-        if llp_raw.endswith("\n[/details]"):
-            llp_raw = llp_raw[:-len("\n[/details]")]
+        if llp_raw.endswith("\n</details>"):
+            llp_raw = llp_raw[:-len("\n</details>")]
 
         # let's check if we need a new reply first
         pattern = (r'(\b(?:January|February|March|April|May|June|July|August|September|October|'
@@ -910,14 +921,16 @@ class Discourse:
             latest_log_post = Discourse.retrieve_single_post(most_recent_post_id)
             llp_raw = latest_log_post.json().get('raw')
             # let's remove the final [/details]
-            if llp_raw.endswith("\n[/details]"):
-                llp_raw = llp_raw[:-len("\n[/details]")]
+            if llp_raw.endswith("\n</details>"):
+                llp_raw = llp_raw[:-len("\n</details>")]
 
         log_date = datetime.now().strftime("%Y-%m-%d | %H:%M")
-        log_entry = f'\n[details ="{log_date}"]\n'
+        log_entry = f'\n<details><summary>{log_date}</summary>'
+        log_entry += '\n<pre>'
         log_entry += '\n'.join(list_handler.log_records)
-        log_entry += '\n[/details]'
-        log_entry += '\n[/details]'  # twice because we've removed the final one.
+        log_entry += '\n</pre>'
+        log_entry += '\n</details>'
+        log_entry += '\n</details>'  # twice because we've removed the final one.
 
         updated_log_post = llp_raw + log_entry
 
@@ -1089,9 +1102,7 @@ def main():
 
 if __name__ == '__main__':
     logging.info('SLMSChimp v1.1 ')
-    if not os.path.exists('.env'):
-        logging.info('main: .env file missing. Can not execute slmschimp.')
-        exit(1)
+    
 
     mc = MailChimpAPI()
     automation = Automation()
